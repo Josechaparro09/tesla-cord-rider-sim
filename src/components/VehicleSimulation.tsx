@@ -1,7 +1,10 @@
+
 import React, { useRef, useState, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text, Html } from '@react-three/drei';
 import * as THREE from 'three';
+import { useToast } from "@/hooks/use-toast";
+import { Check, MapPin, Activity, Settings, ChevronDown, ChevronUp, RotateCcw, Route, Target } from "lucide-react";
 
 interface MotorData {
   maxVoltage: number;
@@ -25,7 +28,13 @@ const VEHICLE_LENGTH = 0.6; // meters
 const VEHICLE_WIDTH = 0.4; // meters
 const VEHICLE_HEIGHT = 0.1; // meters
 
-// The Vehicle component with improved animation
+// Tesla brand colors
+const TESLA_RED = "#E82127";
+const TESLA_SILVER = "#E8E8E8";
+const TESLA_DARK = "#222222";
+const TESLA_LIGHT_GRAY = "#F4F4F4";
+
+// The Vehicle component with improved animation and design
 const Vehicle: React.FC<{
   leftVoltage: number;
   rightVoltage: number;
@@ -44,6 +53,7 @@ const Vehicle: React.FC<{
   // Refs for animation
   const leftWheelRef = useRef<THREE.Mesh>(null);
   const rightWheelRef = useRef<THREE.Mesh>(null);
+  const chassisRef = useRef<THREE.Mesh>(null);
   
   // Use Three.js animation system via useFrame instead of setInterval
   useFrame(() => {
@@ -53,57 +63,123 @@ const Vehicle: React.FC<{
     if (rightWheelRef.current) {
       rightWheelRef.current.rotation.x += rightWheelSpeed / 60;
     }
+    
+    // Small floating animation for the vehicle body
+    if (chassisRef.current) {
+      chassisRef.current.position.y = VEHICLE_HEIGHT / 2 + Math.sin(Date.now() * 0.002) * 0.005;
+    }
   });
 
   return (
     <group position={new THREE.Vector3(...position)} rotation={new THREE.Euler(...rotation)}>
-      {/* Vehicle body */}
-      <mesh position={[0, VEHICLE_HEIGHT / 2, 0]}>
+      {/* Vehicle body - Tesla-inspired design */}
+      <mesh ref={chassisRef} position={[0, VEHICLE_HEIGHT / 2, 0]}>
         <boxGeometry args={[VEHICLE_LENGTH, VEHICLE_HEIGHT, VEHICLE_WIDTH]} />
-        <meshStandardMaterial color="#1E88E5" />
+        <meshStandardMaterial color={TESLA_RED} metalness={0.6} roughness={0.2} />
       </mesh>
       
-      {/* Left wheel */}
+      {/* Vehicle roof */}
+      <mesh position={[0, VEHICLE_HEIGHT + 0.05, 0]} scale={[0.8, 0.05, 0.7]}>
+        <boxGeometry args={[VEHICLE_LENGTH, VEHICLE_HEIGHT, VEHICLE_WIDTH]} />
+        <meshStandardMaterial color={TESLA_DARK} metalness={0.7} roughness={0.2} />
+      </mesh>
+      
+      {/* Windshield */}
+      <mesh position={[VEHICLE_LENGTH * 0.15, VEHICLE_HEIGHT, 0]} rotation={[0, 0, Math.PI * 0.1]}>
+        <planeGeometry args={[VEHICLE_LENGTH * 0.3, VEHICLE_HEIGHT * 0.8]} />
+        <meshStandardMaterial color={TESLA_LIGHT_GRAY} transparent opacity={0.7} metalness={0.9} roughness={0.1} />
+      </mesh>
+      
+      {/* Tesla logo */}
+      <mesh position={[VEHICLE_LENGTH * 0.3, VEHICLE_HEIGHT + 0.06, 0]}>
+        <cylinderGeometry args={[0.04, 0.04, 0.01, 32]} />
+        <meshStandardMaterial color={TESLA_SILVER} metalness={0.8} roughness={0.1} />
+      </mesh>
+      
+      {/* Left wheel with improved appearance */}
       <mesh 
         ref={leftWheelRef}
         position={[-VEHICLE_LENGTH / 4, WHEEL_RADIUS, -VEHICLE_WIDTH / 2 - WHEEL_WIDTH / 2 - axleOffset]} 
         rotation={[0, 0, Math.PI / 2]}
       >
         <cylinderGeometry args={[WHEEL_RADIUS, WHEEL_RADIUS, WHEEL_WIDTH, 32]} />
-        <meshStandardMaterial color="#263238" />
+        <meshStandardMaterial color={TESLA_DARK} roughness={0.8} />
       </mesh>
       
-      {/* Right wheel */}
+      {/* Left wheel rim */}
+      <mesh 
+        position={[-VEHICLE_LENGTH / 4, WHEEL_RADIUS, -VEHICLE_WIDTH / 2 - WHEEL_WIDTH / 2 - axleOffset]} 
+        rotation={[0, 0, Math.PI / 2]}
+      >
+        <torusGeometry args={[WHEEL_RADIUS * 0.7, WHEEL_RADIUS * 0.05, 16, 32]} />
+        <meshStandardMaterial color={TESLA_SILVER} metalness={0.9} roughness={0.1} />
+      </mesh>
+      
+      {/* Right wheel with improved appearance */}
       <mesh 
         ref={rightWheelRef}
         position={[-VEHICLE_LENGTH / 4, WHEEL_RADIUS, VEHICLE_WIDTH / 2 + WHEEL_WIDTH / 2 + axleOffset]} 
         rotation={[0, 0, Math.PI / 2]}
       >
         <cylinderGeometry args={[WHEEL_RADIUS, WHEEL_RADIUS, WHEEL_WIDTH, 32]} />
-        <meshStandardMaterial color="#263238" />
+        <meshStandardMaterial color={TESLA_DARK} roughness={0.8} />
+      </mesh>
+      
+      {/* Right wheel rim */}
+      <mesh 
+        position={[-VEHICLE_LENGTH / 4, WHEEL_RADIUS, VEHICLE_WIDTH / 2 + WHEEL_WIDTH / 2 + axleOffset]} 
+        rotation={[0, 0, Math.PI / 2]}
+      >
+        <torusGeometry args={[WHEEL_RADIUS * 0.7, WHEEL_RADIUS * 0.05, 16, 32]} />
+        <meshStandardMaterial color={TESLA_SILVER} metalness={0.9} roughness={0.1} />
+      </mesh>
+      
+      {/* Headlights */}
+      <mesh position={[VEHICLE_LENGTH / 2.2, VEHICLE_HEIGHT / 2, VEHICLE_WIDTH / 4]}>
+        <cylinderGeometry args={[0.03, 0.03, 0.02, 16]} rotation={[Math.PI / 2, 0, 0]} />
+        <meshStandardMaterial color="#FFFFFF" emissive="#FFFF99" emissiveIntensity={0.5} />
+      </mesh>
+      
+      <mesh position={[VEHICLE_LENGTH / 2.2, VEHICLE_HEIGHT / 2, -VEHICLE_WIDTH / 4]}>
+        <cylinderGeometry args={[0.03, 0.03, 0.02, 16]} rotation={[Math.PI / 2, 0, 0]} />
+        <meshStandardMaterial color="#FFFFFF" emissive="#FFFF99" emissiveIntensity={0.5} />
       </mesh>
       
       {/* Direction indicator */}
       <mesh position={[VEHICLE_LENGTH / 3, VEHICLE_HEIGHT, 0]}>
         <coneGeometry args={[0.05, 0.1, 16]} />
-        <meshStandardMaterial color="#FF3D00" />
+        <meshStandardMaterial color={TESLA_RED} />
+      </mesh>
+      
+      {/* Sensors (decorative) */}
+      <mesh position={[VEHICLE_LENGTH / 2 - 0.02, VEHICLE_HEIGHT / 2, 0]}>
+        <boxGeometry args={[0.02, 0.02, VEHICLE_WIDTH * 0.5]} />
+        <meshStandardMaterial color="#333333" />
       </mesh>
     </group>
   );
 };
 
-// Floor grid
+// Improved Floor grid with Tesla branding
 const Floor: React.FC = () => {
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]}>
-      <planeGeometry args={[20, 20]} />
-      <meshStandardMaterial color="#E0E0E0" />
-      <gridHelper args={[20, 20, "#000000", "#CCCCCC"]} rotation={[Math.PI / 2, 0, 0]} />
-    </mesh>
+    <group>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]}>
+        <planeGeometry args={[20, 20]} />
+        <meshStandardMaterial color="#E0E0E0" />
+        <gridHelper args={[20, 20, "#000000", "#CCCCCC"]} rotation={[Math.PI / 2, 0, 0]} />
+      </mesh>
+      
+      {/* Tesla logo on the floor */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
+        <circleGeometry args={[0.5, 32]} />
+        <meshStandardMaterial color={TESLA_RED} />
+      </mesh>
+    </group>
   );
 };
 
-// Control panel for user inputs
+// Control panel for user inputs with improved UI
 const ControlPanel: React.FC<{
   leftVoltage: number;
   rightVoltage: number;
@@ -124,11 +200,16 @@ const ControlPanel: React.FC<{
   goToPosition
 }) => {
   return (
-    <div className="absolute top-0 right-0 bg-white/90 p-4 m-4 rounded-lg shadow-lg w-64 z-10 border border-blue-500 text-black">
-      <h2 className="text-xl font-bold text-blue-800 mb-4">Tesla Cord Rider</h2>
+    <div className="absolute top-0 right-0 bg-white/90 p-4 m-4 rounded-lg shadow-lg w-64 z-10 border border-red-500 text-black">
+      <h2 className="text-xl font-bold text-red-600 mb-4 flex items-center">
+        <Settings className="mr-2 h-5 w-5" /> Tesla Cord Rider
+      </h2>
       
       <div className="mb-4">
-        <label className="text-sm font-medium">Left Motor Voltage: {leftVoltage.toFixed(1)}V</label>
+        <label className="text-sm font-medium flex items-center justify-between">
+          <span>Left Motor: {leftVoltage.toFixed(1)}V</span>
+          <span className="text-xs text-gray-500">{(leftVoltage / motorData.maxVoltage * 100).toFixed(0)}%</span>
+        </label>
         <input
           type="range"
           min="-400"
@@ -136,12 +217,15 @@ const ControlPanel: React.FC<{
           step="10"
           value={leftVoltage}
           onChange={(e) => setLeftVoltage(parseFloat(e.target.value))}
-          className="w-full"
+          className="w-full accent-red-500"
         />
       </div>
       
       <div className="mb-4">
-        <label className="text-sm font-medium">Right Motor Voltage: {rightVoltage.toFixed(1)}V</label>
+        <label className="text-sm font-medium flex items-center justify-between">
+          <span>Right Motor: {rightVoltage.toFixed(1)}V</span>
+          <span className="text-xs text-gray-500">{(rightVoltage / motorData.maxVoltage * 100).toFixed(0)}%</span>
+        </label>
         <input
           type="range"
           min="-400"
@@ -149,12 +233,15 @@ const ControlPanel: React.FC<{
           step="10"
           value={rightVoltage}
           onChange={(e) => setRightVoltage(parseFloat(e.target.value))}
-          className="w-full"
+          className="w-full accent-red-500"
         />
       </div>
       
       <div className="mb-4">
-        <label className="text-sm font-medium">Axle Offset: {axleOffset.toFixed(2)}m</label>
+        <label className="text-sm font-medium flex items-center justify-between">
+          <span>Axle Offset: {axleOffset.toFixed(2)}m</span>
+          <span className="text-xs text-gray-500">{(axleOffset / 0.1 * 100).toFixed(0)}%</span>
+        </label>
         <input
           type="range"
           min="0"
@@ -162,29 +249,29 @@ const ControlPanel: React.FC<{
           step="0.01"
           value={axleOffset}
           onChange={(e) => setAxleOffset(parseFloat(e.target.value))}
-          className="w-full"
+          className="w-full accent-red-500"
         />
       </div>
       
       <div className="flex space-x-2">
         <button 
           onClick={programPath}
-          className="bg-blue-500 text-white px-3 py-1 rounded-md hover:bg-blue-600 transition text-sm"
+          className="bg-red-600 text-white px-3 py-1 rounded-md hover:bg-red-700 transition text-sm flex items-center"
         >
-          Program Path
+          <Route className="mr-1 h-4 w-4" /> Program Path
         </button>
         <button 
           onClick={goToPosition}
-          className="bg-blue-500 text-white px-3 py-1 rounded-md hover:bg-blue-600 transition text-sm"
+          className="bg-red-600 text-white px-3 py-1 rounded-md hover:bg-red-700 transition text-sm flex items-center"
         >
-          Go to Position
+          <Target className="mr-1 h-4 w-4" /> Go to Position
         </button>
       </div>
     </div>
   );
 };
 
-// Metrics display
+// Improved metrics display
 const MetricsDisplay: React.FC<{
   position: [number, number, number];
   rotation: [number, number, number];
@@ -198,8 +285,10 @@ const MetricsDisplay: React.FC<{
   const angularVelocity = ((rightSpeed - leftSpeed) * WHEEL_RADIUS) / VEHICLE_WIDTH;
   
   return (
-    <div className="absolute bottom-0 left-0 bg-white/90 p-4 m-4 rounded-lg shadow-lg w-80 z-10 border border-blue-500 text-black">
-      <h3 className="text-lg font-bold text-blue-800 mb-2">Vehicle Metrics</h3>
+    <div className="absolute bottom-0 left-0 bg-white/90 p-4 m-4 rounded-lg shadow-lg w-80 z-10 border border-red-500 text-black">
+      <h3 className="text-lg font-bold text-red-600 mb-2 flex items-center">
+        <Activity className="mr-2 h-5 w-5" /> Vehicle Metrics
+      </h3>
       
       <div className="grid grid-cols-2 gap-2 text-sm">
         <div>
@@ -277,6 +366,8 @@ const Trajectory: React.FC<{
 
 // Main simulation component
 const VehicleSimulation: React.FC = () => {
+  const { toast } = useToast();
+  
   // Motor voltages
   const [leftVoltage, setLeftVoltage] = useState(0);
   const [rightVoltage, setRightVoltage] = useState(0);
@@ -306,6 +397,14 @@ const VehicleSimulation: React.FC = () => {
   const leftWheelSpeed = (leftVoltage / motorData.maxVoltage) * motorData.maxRPM * (Math.PI / 30); // rad/s
   const rightWheelSpeed = (rightVoltage / motorData.maxVoltage) * motorData.maxRPM * (Math.PI / 30); // rad/s
   
+  // Improved calibration constants
+  const TURN_GAIN = 2.0;  // More responsive turning
+  const DISTANCE_GAIN = 1.0; // Faster approach to target
+  const ARRIVAL_THRESHOLD = 0.05; // Distance threshold for arrival
+  const HEADING_THRESHOLD = 0.05; // Heading threshold for arrival
+  const MAX_TURN_RATE = 2.0; // Maximum turn rate
+  const MAX_SPEED = 1.0; // Maximum speed
+
   // Update vehicle position based on manual controls
   useEffect(() => {
     if (followingPath || targetPosition) {
@@ -353,7 +452,7 @@ const VehicleSimulation: React.FC = () => {
     return () => clearInterval(timer);
   }, [leftWheelSpeed, rightWheelSpeed, position, rotation, followingPath, targetPosition]);
   
-  // Path following controller
+  // Improved path following controller with better calibration
   useEffect(() => {
     if (!followingPath || programmedPath.length === 0) return;
     
@@ -374,12 +473,12 @@ const VehicleSimulation: React.FC = () => {
       while (headingError > Math.PI) headingError -= 2 * Math.PI;
       while (headingError < -Math.PI) headingError += 2 * Math.PI;
       
-      // Proportional controllers
-      const turnGain = 1.5; // gain for angular control
-      const distanceGain = 0.8; // gain for speed control
+      // Improved proportional controllers with better calibration
+      const turnGain = TURN_GAIN; // gain for angular control
+      const distanceGain = DISTANCE_GAIN; // gain for speed control
       
-      const turnRate = Math.min(Math.max(headingError * turnGain, -1.5), 1.5);
-      const speed = Math.min(distance * distanceGain, 0.8);
+      const turnRate = Math.min(Math.max(headingError * turnGain, -MAX_TURN_RATE), MAX_TURN_RATE);
+      const speed = Math.min(distance * distanceGain, MAX_SPEED);
       
       // Calculate wheel speeds from desired speed and turn rate
       const leftSpeed = (speed - turnRate * VEHICLE_WIDTH / 2) / WHEEL_RADIUS;
@@ -410,11 +509,25 @@ const VehicleSimulation: React.FC = () => {
       });
       
       // Check if we've reached the current waypoint
-      if (distance < 0.1) {
+      if (distance < ARRIVAL_THRESHOLD) {
+        // Show arrival toast
+        toast({
+          title: `Waypoint ${currentWaypoint + 1} Reached!`,
+          description: `Successfully arrived at waypoint ${currentWaypoint + 1} of ${programmedPath.length}`,
+          duration: 3000,
+        });
+        
         // If final waypoint, we're done
         if (currentWaypoint === programmedPath.length - 1) {
           setFollowingPath(false);
           setCurrentWaypoint(0);
+          
+          // Show completion toast
+          toast({
+            title: "Path Complete",
+            description: "Successfully completed the programmed path",
+            duration: 5000,
+          });
         } else {
           // Otherwise, move to next waypoint
           setCurrentWaypoint(prev => prev + 1);
@@ -423,9 +536,9 @@ const VehicleSimulation: React.FC = () => {
     }, updateInterval);
     
     return () => clearInterval(timer);
-  }, [followingPath, programmedPath, currentWaypoint, position, rotation]);
+  }, [followingPath, programmedPath, currentWaypoint, position, rotation, toast]);
   
-  // Go to position controller
+  // Improved go to position controller with better calibration
   useEffect(() => {
     if (!targetPosition) return;
     
@@ -448,17 +561,24 @@ const VehicleSimulation: React.FC = () => {
       while (headingError > Math.PI) headingError -= 2 * Math.PI;
       while (headingError < -Math.PI) headingError += 2 * Math.PI;
       
-      // Controller parameters
-      const turnGain = closeToTarget ? 2.0 : 1.5;
-      const speedGain = closeToTarget ? 0.5 : 0.8;
+      // Controller parameters with improved calibration
+      const turnGain = closeToTarget ? 2.5 : 2.0;
+      const speedGain = closeToTarget ? 0.5 : 1.0;
       
       // Control outputs
-      const turnRate = Math.min(Math.max(headingError * turnGain, -1.5), 1.5);
-      const speed = Math.min(distance * speedGain, closeToTarget ? 0.2 : 0.8);
+      const turnRate = Math.min(Math.max(headingError * turnGain, -MAX_TURN_RATE), MAX_TURN_RATE);
+      const speed = Math.min(distance * speedGain, closeToTarget ? 0.3 : MAX_SPEED);
       
       // If very close to target and heading is good, stop
-      if (distance < 0.05 && Math.abs(headingError) < 0.05) {
+      if (distance < ARRIVAL_THRESHOLD && Math.abs(headingError) < HEADING_THRESHOLD) {
         setTargetPosition(null);
+        
+        // Show arrival toast
+        toast({
+          title: "Destination Reached!",
+          description: `Successfully arrived at position (${targetPosition.x.toFixed(2)}, ${targetPosition.y.toFixed(2)}) with heading ${(targetPosition.theta * (180/Math.PI)).toFixed(1)}°`,
+          duration: 5000,
+        });
         return;
       }
       
@@ -488,37 +608,37 @@ const VehicleSimulation: React.FC = () => {
     }, updateInterval);
     
     return () => clearInterval(timer);
-  }, [targetPosition, position, rotation]);
+  }, [targetPosition, position, rotation, toast]);
   
   return (
     <div className="relative w-full h-screen">
       <div className="absolute top-4 left-4 z-10">
-        <h1 className="text-2xl font-bold text-white bg-blue-500 px-4 py-2 rounded-lg shadow">
-          Tesla Cord Rider Simulation
+        <h1 className="text-2xl font-bold text-white bg-red-600 px-4 py-2 rounded-lg shadow flex items-center">
+          <Settings className="mr-2 h-6 w-6" /> Tesla Cord Rider Simulation
         </h1>
       </div>
       
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex space-x-2">
         <button 
           onClick={() => setMathModelOpen(true)}
-          className="bg-white text-blue-800 px-4 py-2 rounded-md shadow hover:bg-blue-100 transition"
+          className="bg-white text-red-600 px-4 py-2 rounded-md shadow hover:bg-red-50 transition flex items-center"
         >
-          View Mathematical Model
+          <Activity className="mr-2 h-5 w-5" /> View Mathematical Model
         </button>
         {followingPath && (
           <button 
             onClick={() => setFollowingPath(false)}
-            className="bg-red-500 text-white px-4 py-2 rounded-md shadow hover:bg-red-600 transition"
+            className="bg-red-600 text-white px-4 py-2 rounded-md shadow hover:bg-red-700 transition flex items-center"
           >
-            Stop Path Following
+            <RotateCcw className="mr-2 h-5 w-5" /> Stop Path Following
           </button>
         )}
         {targetPosition && (
           <button 
             onClick={() => setTargetPosition(null)}
-            className="bg-red-500 text-white px-4 py-2 rounded-md shadow hover:bg-red-600 transition"
+            className="bg-red-600 text-white px-4 py-2 rounded-md shadow hover:bg-red-700 transition flex items-center"
           >
-            Cancel Go To Position
+            <RotateCcw className="mr-2 h-5 w-5" /> Cancel Go To Position
           </button>
         )}
       </div>
@@ -528,6 +648,8 @@ const VehicleSimulation: React.FC = () => {
         <color attach="background" args={["#f0f0f0"]} />
         <ambientLight intensity={0.5} />
         <directionalLight position={[10, 10, 5]} intensity={1} />
+        <hemisphereLight args={["#ffffff", "#bbdefb", 0.6]} />
+        <spotLight position={[5, 10, 5]} angle={0.3} penumbra={0.8} intensity={1} castShadow />
         
         {/* Vehicle */}
         <Vehicle 
@@ -632,6 +754,12 @@ const VehicleSimulation: React.FC = () => {
           setProgrammedPath(path);
           setCurrentWaypoint(0);
           setFollowingPath(true);
+          
+          toast({
+            title: "Path Programmed",
+            description: `${path.length} waypoints added to path`,
+            duration: 3000,
+          });
         }}
       />
       
@@ -640,6 +768,12 @@ const VehicleSimulation: React.FC = () => {
         onClose={() => setPositionDialogOpen(false)}
         onGo={(x, y, theta) => {
           setTargetPosition({x, y, theta});
+          
+          toast({
+            title: "Navigation Started",
+            description: `Navigating to position (${x.toFixed(2)}, ${y.toFixed(2)}, ${(theta * (180/Math.PI)).toFixed(1)}°)`,
+            duration: 3000,
+          });
         }}
       />
       
@@ -651,7 +785,7 @@ const VehicleSimulation: React.FC = () => {
   );
 };
 
-// PathProgramDialog component
+// Improved PathProgramDialog component
 const PathProgramDialog: React.FC<{
   isOpen: boolean;
   onClose: () => void;
@@ -659,9 +793,9 @@ const PathProgramDialog: React.FC<{
 }> = ({ isOpen, onClose, onSave }) => {
   const [waypoints, setWaypoints] = useState<{x: number, y: number, theta: number}[]>([
     {x: 1, y: 1, theta: 0},
-    {x: 1, y: -1, theta: 90},
-    {x: -1, y: -1, theta: 180},
-    {x: -1, y: 1, theta: 270}
+    {x: 1, y: -1, theta: 90 * (Math.PI/180)},
+    {x: -1, y: -1, theta: 180 * (Math.PI/180)},
+    {x: -1, y: 1, theta: 270 * (Math.PI/180)}
   ]);
   
   const addWaypoint = () => {
@@ -670,7 +804,14 @@ const PathProgramDialog: React.FC<{
   
   const updateWaypoint = (index: number, key: 'x' | 'y' | 'theta', value: number) => {
     const newWaypoints = [...waypoints];
-    newWaypoints[index][key] = value;
+    
+    if (key === 'theta' && value !== undefined) {
+      // Convert degrees to radians for internal storage
+      newWaypoints[index][key] = value * (Math.PI/180);
+    } else {
+      newWaypoints[index][key] = value;
+    }
+    
     setWaypoints(newWaypoints);
   };
   
@@ -685,7 +826,9 @@ const PathProgramDialog: React.FC<{
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-lg p-6 w-96 max-h-[80vh] overflow-y-auto">
-        <h2 className="text-xl font-bold text-blue-800 mb-4">Program Path</h2>
+        <h2 className="text-xl font-bold text-red-600 mb-4 flex items-center">
+          <Route className="mr-2 h-5 w-5" /> Program Path
+        </h2>
         
         <div className="mb-4">
           {waypoints.map((wp, index) => (
@@ -713,7 +856,7 @@ const PathProgramDialog: React.FC<{
                   <label className="text-xs font-medium">θ (deg)</label>
                   <input
                     type="number"
-                    value={wp.theta}
+                    value={(wp.theta * (180/Math.PI)).toFixed(0)}
                     onChange={(e) => updateWaypoint(index, 'theta', parseFloat(e.target.value))}
                     className="w-full border rounded p-1 text-sm"
                   />
@@ -731,9 +874,9 @@ const PathProgramDialog: React.FC<{
         
         <button 
           onClick={addWaypoint}
-          className="bg-blue-500 text-white px-3 py-1 rounded-md hover:bg-blue-600 transition mr-2"
+          className="bg-red-600 text-white px-3 py-1 rounded-md hover:bg-red-700 transition mr-2 flex items-center"
         >
-          Add Waypoint
+          <ChevronUp className="mr-1 h-4 w-4" /> Add Waypoint
         </button>
         
         <div className="flex justify-end mt-4 space-x-2">
@@ -748,9 +891,9 @@ const PathProgramDialog: React.FC<{
               onSave(waypoints);
               onClose();
             }}
-            className="bg-blue-500 text-white px-3 py-1 rounded-md hover:bg-blue-600 transition"
+            className="bg-red-600 text-white px-3 py-1 rounded-md hover:bg-red-700 transition flex items-center"
           >
-            Save Path
+            <Check className="mr-1 h-4 w-4" /> Save Path
           </button>
         </div>
       </div>
@@ -758,7 +901,7 @@ const PathProgramDialog: React.FC<{
   );
 };
 
-// Go to position dialog
+// Improved go to position dialog
 const PositionDialog: React.FC<{
   isOpen: boolean;
   onClose: () => void;
@@ -771,7 +914,9 @@ const PositionDialog: React.FC<{
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-lg p-6 w-80">
-        <h2 className="text-xl font-bold text-blue-800 mb-4">Go to Position</h2>
+        <h2 className="text-xl font-bold text-red-600 mb-4 flex items-center">
+          <MapPin className="mr-2 h-5 w-5" /> Go to Position
+        </h2>
         
         <div className="mb-4 space-y-3">
           <div>
@@ -815,9 +960,9 @@ const PositionDialog: React.FC<{
               onGo(position.x, position.y, position.theta * (Math.PI/180));
               onClose();
             }}
-            className="bg-blue-500 text-white px-3 py-1 rounded-md hover:bg-blue-600 transition"
+            className="bg-red-600 text-white px-3 py-1 rounded-md hover:bg-red-700 transition flex items-center"
           >
-            Go
+            <Check className="mr-1 h-4 w-4" /> Go
           </button>
         </div>
       </div>
@@ -835,10 +980,12 @@ const MathematicalModel: React.FC<{
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-lg p-6 w-[700px] max-h-[80vh] overflow-y-auto">
-        <h2 className="text-2xl font-bold text-blue-800 mb-4">Mathematical Model</h2>
+        <h2 className="text-2xl font-bold text-red-600 mb-4 flex items-center">
+          <Activity className="mr-2 h-6 w-6" /> Mathematical Model
+        </h2>
         
         <div className="mb-6">
-          <h3 className="text-xl font-bold text-blue-700 mb-2">Kinematics Model</h3>
+          <h3 className="text-xl font-bold text-red-600 mb-2">Kinematics Model</h3>
           <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
             <p className="mb-2">For a differential drive vehicle:</p>
             <p className="font-mono">Linear velocity (v) = (right_wheel_velocity + left_wheel_velocity) / 2</p>
@@ -861,7 +1008,7 @@ const MathematicalModel: React.FC<{
         </div>
         
         <div className="mb-6">
-          <h3 className="text-xl font-bold text-blue-700 mb-2">Dynamics Model</h3>
+          <h3 className="text-xl font-bold text-red-600 mb-2">Dynamics Model</h3>
           <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
             <p className="mb-2">DC Motor Model:</p>
             <p className="font-mono">Torque = kT · (V - kE · ω) / R</p>
@@ -881,7 +1028,7 @@ const MathematicalModel: React.FC<{
         </div>
         
         <div className="mb-6">
-          <h3 className="text-xl font-bold text-blue-700 mb-2">Control Algorithm</h3>
+          <h3 className="text-xl font-bold text-red-600 mb-2">Control Algorithm</h3>
           <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
             <p className="mb-2">Position control using a simple PID controller:</p>
             <p className="font-mono">position_error = √((target_x - current_x)² + (target_y - current_y)²)</p>
@@ -900,9 +1047,9 @@ const MathematicalModel: React.FC<{
         <div className="flex justify-end">
           <button 
             onClick={onClose}
-            className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 transition"
+            className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition flex items-center"
           >
-            Close
+            <Check className="mr-1 h-5 w-5" /> Close
           </button>
         </div>
       </div>
