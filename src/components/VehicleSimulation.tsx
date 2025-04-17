@@ -1,5 +1,4 @@
-
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text, Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -26,6 +25,7 @@ const VEHICLE_LENGTH = 0.6; // meters
 const VEHICLE_WIDTH = 0.4; // meters
 const VEHICLE_HEIGHT = 0.1; // meters
 
+// The Vehicle component with improved animation
 const Vehicle: React.FC<{
   leftVoltage: number;
   rightVoltage: number;
@@ -34,8 +34,6 @@ const Vehicle: React.FC<{
   rotation: [number, number, number];
 }> = ({ leftVoltage, rightVoltage, axleOffset, position, rotation }) => {
   // Calculate motor speeds from voltages (simplified model)
-  // RPM = (Voltage - Back EMF) / Resistance * K
-  // For simplification, we'll use a linear model
   const leftMotorSpeed = (leftVoltage / motorData.maxVoltage) * motorData.maxRPM;
   const rightMotorSpeed = (rightVoltage / motorData.maxVoltage) * motorData.maxRPM;
   
@@ -47,19 +45,15 @@ const Vehicle: React.FC<{
   const leftWheelRef = useRef<THREE.Mesh>(null);
   const rightWheelRef = useRef<THREE.Mesh>(null);
   
-  // Update wheel rotation in animation loop
-  React.useEffect(() => {
-    const interval = setInterval(() => {
-      if (leftWheelRef.current) {
-        leftWheelRef.current.rotation.x += leftWheelSpeed / 60;
-      }
-      if (rightWheelRef.current) {
-        rightWheelRef.current.rotation.x += rightWheelSpeed / 60;
-      }
-    }, 16);
-    
-    return () => clearInterval(interval);
-  }, [leftWheelSpeed, rightWheelSpeed]);
+  // Use Three.js animation system via useFrame instead of setInterval
+  useFrame(() => {
+    if (leftWheelRef.current) {
+      leftWheelRef.current.rotation.x += leftWheelSpeed / 60;
+    }
+    if (rightWheelRef.current) {
+      rightWheelRef.current.rotation.x += rightWheelSpeed / 60;
+    }
+  });
 
   return (
     <group position={new THREE.Vector3(...position)} rotation={new THREE.Euler(...rotation)}>
@@ -241,7 +235,423 @@ const MetricsDisplay: React.FC<{
   );
 };
 
-// Path programming dialog
+// PathLine component to fix the line rendering
+const PathLine: React.FC<{
+  start: [number, number, number];
+  end: [number, number, number];
+  color?: string;
+}> = ({ start, end, color = "#2196F3" }) => {
+  return (
+    <primitive object={new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(...start),
+        new THREE.Vector3(...end)
+      ]),
+      new THREE.LineBasicMaterial({ color })
+    )} />
+  );
+};
+
+// Visualization component for the vehicle's trajectory
+const Trajectory: React.FC<{
+  points: [number, number, number][];
+}> = ({ points }) => {
+  if (points.length < 2) return null;
+  
+  return (
+    <>
+      {points.map((point, index) => {
+        if (index === points.length - 1) return null;
+        return (
+          <PathLine
+            key={index}
+            start={point}
+            end={points[index + 1]}
+            color="#4CAF50"
+          />
+        );
+      })}
+    </>
+  );
+};
+
+// Main simulation component
+const VehicleSimulation: React.FC = () => {
+  // Motor voltages
+  const [leftVoltage, setLeftVoltage] = useState(0);
+  const [rightVoltage, setRightVoltage] = useState(0);
+  
+  // Vehicle state
+  const [position, setPosition] = useState<[number, number, number]>([0, 0, 0]);
+  const [rotation, setRotation] = useState<[number, number, number]>([0, 0, 0]);
+  const [trajectoryPoints, setTrajectoryPoints] = useState<[number, number, number][]>([[0, 0.05, 0]]);
+  
+  // Axle configuration
+  const [axleOffset, setAxleOffset] = useState(0);
+  
+  // Path programming state
+  const [pathDialogOpen, setPathDialogOpen] = useState(false);
+  const [programmedPath, setProgrammedPath] = useState<{x: number, y: number, theta: number}[]>([]);
+  const [followingPath, setFollowingPath] = useState(false);
+  const [currentWaypoint, setCurrentWaypoint] = useState(0);
+  
+  // Position control state
+  const [positionDialogOpen, setPositionDialogOpen] = useState(false);
+  const [targetPosition, setTargetPosition] = useState<{x: number, y: number, theta: number} | null>(null);
+  
+  // Mathematical model dialog
+  const [mathModelOpen, setMathModelOpen] = useState(false);
+  
+  // Calculate wheel speeds from voltages
+  const leftWheelSpeed = (leftVoltage / motorData.maxVoltage) * motorData.maxRPM * (Math.PI / 30); // rad/s
+  const rightWheelSpeed = (rightVoltage / motorData.maxVoltage) * motorData.maxRPM * (Math.PI / 30); // rad/s
+  
+  // Update vehicle position based on manual controls
+  useEffect(() => {
+    if (followingPath || targetPosition) {
+      // Don't apply manual controls when in autonomous mode
+      return;
+    }
+    
+    const updateInterval = 16; // ms (approximately 60fps)
+    const frameTime = updateInterval / 1000; // seconds
+    
+    const timer = setInterval(() => {
+      // Calculate linear and angular velocities from wheel speeds
+      const linearVelocity = ((leftWheelSpeed + rightWheelSpeed) / 2) * WHEEL_RADIUS;
+      const angularVelocity = ((rightWheelSpeed - leftWheelSpeed) * WHEEL_RADIUS) / VEHICLE_WIDTH;
+      
+      // Update rotation first (important for correct movement direction)
+      const newRotation: [number, number, number] = [
+        rotation[0],
+        rotation[1] + angularVelocity * frameTime,
+        rotation[2]
+      ];
+      
+      // Then update position based on the new rotation
+      const newPosition: [number, number, number] = [
+        position[0] + linearVelocity * Math.cos(newRotation[1]) * frameTime,
+        position[1],
+        position[2] + linearVelocity * Math.sin(newRotation[1]) * frameTime
+      ];
+      
+      setRotation(newRotation);
+      setPosition(newPosition);
+      
+      // Record trajectory point (not too frequently to avoid performance issues)
+      if (Math.abs(linearVelocity) > 0.01 || Math.abs(angularVelocity) > 0.01) {
+        setTrajectoryPoints(prev => {
+          if (prev.length > 500) {
+            // Limit number of points to avoid performance issues
+            return [...prev.slice(-499), [newPosition[0], 0.05, newPosition[2]]];
+          }
+          return [...prev, [newPosition[0], 0.05, newPosition[2]]];
+        });
+      }
+    }, updateInterval);
+    
+    return () => clearInterval(timer);
+  }, [leftWheelSpeed, rightWheelSpeed, position, rotation, followingPath, targetPosition]);
+  
+  // Path following controller
+  useEffect(() => {
+    if (!followingPath || programmedPath.length === 0) return;
+    
+    const updateInterval = 16; // ms
+    const frameTime = updateInterval / 1000; // seconds
+    
+    const timer = setInterval(() => {
+      const waypoint = programmedPath[currentWaypoint];
+      const dx = waypoint.x - position[0];
+      const dy = waypoint.y - position[2];
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      // Calculate target heading (angle to the waypoint)
+      const targetHeading = Math.atan2(dy, dx);
+      
+      // Calculate heading error (normalized to [-PI, PI])
+      let headingError = targetHeading - rotation[1];
+      while (headingError > Math.PI) headingError -= 2 * Math.PI;
+      while (headingError < -Math.PI) headingError += 2 * Math.PI;
+      
+      // Proportional controllers
+      const turnGain = 1.5; // gain for angular control
+      const distanceGain = 0.8; // gain for speed control
+      
+      const turnRate = Math.min(Math.max(headingError * turnGain, -1.5), 1.5);
+      const speed = Math.min(distance * distanceGain, 0.8);
+      
+      // Calculate wheel speeds from desired speed and turn rate
+      const leftSpeed = (speed - turnRate * VEHICLE_WIDTH / 2) / WHEEL_RADIUS;
+      const rightSpeed = (speed + turnRate * VEHICLE_WIDTH / 2) / WHEEL_RADIUS;
+      
+      // Update position and rotation
+      const newRotation: [number, number, number] = [
+        rotation[0],
+        rotation[1] + turnRate * frameTime,
+        rotation[2]
+      ];
+      
+      const newPosition: [number, number, number] = [
+        position[0] + speed * Math.cos(newRotation[1]) * frameTime,
+        position[1],
+        position[2] + speed * Math.sin(newRotation[1]) * frameTime
+      ];
+      
+      setRotation(newRotation);
+      setPosition(newPosition);
+      
+      // Record trajectory
+      setTrajectoryPoints(prev => {
+        if (prev.length > 500) {
+          return [...prev.slice(-499), [newPosition[0], 0.05, newPosition[2]]];
+        }
+        return [...prev, [newPosition[0], 0.05, newPosition[2]]];
+      });
+      
+      // Check if we've reached the current waypoint
+      if (distance < 0.1) {
+        // If final waypoint, we're done
+        if (currentWaypoint === programmedPath.length - 1) {
+          setFollowingPath(false);
+          setCurrentWaypoint(0);
+        } else {
+          // Otherwise, move to next waypoint
+          setCurrentWaypoint(prev => prev + 1);
+        }
+      }
+    }, updateInterval);
+    
+    return () => clearInterval(timer);
+  }, [followingPath, programmedPath, currentWaypoint, position, rotation]);
+  
+  // Go to position controller
+  useEffect(() => {
+    if (!targetPosition) return;
+    
+    const updateInterval = 16; // ms
+    const frameTime = updateInterval / 1000; // seconds
+    
+    const timer = setInterval(() => {
+      const dx = targetPosition.x - position[0];
+      const dy = targetPosition.y - position[2];
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      // Are we close enough to start prioritizing final heading?
+      const closeToTarget = distance < 0.3;
+      
+      // Target heading - path heading when far, final heading when close
+      const targetHeading = closeToTarget ? targetPosition.theta : Math.atan2(dy, dx);
+      
+      // Heading error (normalized to [-PI, PI])
+      let headingError = targetHeading - rotation[1];
+      while (headingError > Math.PI) headingError -= 2 * Math.PI;
+      while (headingError < -Math.PI) headingError += 2 * Math.PI;
+      
+      // Controller parameters
+      const turnGain = closeToTarget ? 2.0 : 1.5;
+      const speedGain = closeToTarget ? 0.5 : 0.8;
+      
+      // Control outputs
+      const turnRate = Math.min(Math.max(headingError * turnGain, -1.5), 1.5);
+      const speed = Math.min(distance * speedGain, closeToTarget ? 0.2 : 0.8);
+      
+      // If very close to target and heading is good, stop
+      if (distance < 0.05 && Math.abs(headingError) < 0.05) {
+        setTargetPosition(null);
+        return;
+      }
+      
+      // Update position and rotation
+      const newRotation: [number, number, number] = [
+        rotation[0],
+        rotation[1] + turnRate * frameTime,
+        rotation[2]
+      ];
+      
+      const newPosition: [number, number, number] = [
+        position[0] + speed * Math.cos(newRotation[1]) * frameTime,
+        position[1],
+        position[2] + speed * Math.sin(newRotation[1]) * frameTime
+      ];
+      
+      setRotation(newRotation);
+      setPosition(newPosition);
+      
+      // Record trajectory
+      setTrajectoryPoints(prev => {
+        if (prev.length > 500) {
+          return [...prev.slice(-499), [newPosition[0], 0.05, newPosition[2]]];
+        }
+        return [...prev, [newPosition[0], 0.05, newPosition[2]]];
+      });
+    }, updateInterval);
+    
+    return () => clearInterval(timer);
+  }, [targetPosition, position, rotation]);
+  
+  return (
+    <div className="relative w-full h-screen">
+      <div className="absolute top-4 left-4 z-10">
+        <h1 className="text-2xl font-bold text-white bg-blue-500 px-4 py-2 rounded-lg shadow">
+          Tesla Cord Rider Simulation
+        </h1>
+      </div>
+      
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex space-x-2">
+        <button 
+          onClick={() => setMathModelOpen(true)}
+          className="bg-white text-blue-800 px-4 py-2 rounded-md shadow hover:bg-blue-100 transition"
+        >
+          View Mathematical Model
+        </button>
+        {followingPath && (
+          <button 
+            onClick={() => setFollowingPath(false)}
+            className="bg-red-500 text-white px-4 py-2 rounded-md shadow hover:bg-red-600 transition"
+          >
+            Stop Path Following
+          </button>
+        )}
+        {targetPosition && (
+          <button 
+            onClick={() => setTargetPosition(null)}
+            className="bg-red-500 text-white px-4 py-2 rounded-md shadow hover:bg-red-600 transition"
+          >
+            Cancel Go To Position
+          </button>
+        )}
+      </div>
+      
+      {/* 3D Simulation Canvas */}
+      <Canvas camera={{ position: [0, 5, 5], fov: 50 }}>
+        <color attach="background" args={["#f0f0f0"]} />
+        <ambientLight intensity={0.5} />
+        <directionalLight position={[10, 10, 5]} intensity={1} />
+        
+        {/* Vehicle */}
+        <Vehicle 
+          leftVoltage={leftVoltage} 
+          rightVoltage={rightVoltage} 
+          axleOffset={axleOffset}
+          position={position}
+          rotation={rotation}
+        />
+        
+        {/* Environment */}
+        <Floor />
+        
+        {/* Trajectory visualization */}
+        <Trajectory points={trajectoryPoints} />
+        
+        {/* Path visualization */}
+        {programmedPath.length > 0 && (
+          <group>
+            {programmedPath.map((wp, index) => (
+              <React.Fragment key={index}>
+                <mesh position={[wp.x, 0.05, wp.y]}>
+                  <sphereGeometry args={[0.1, 16, 16]} />
+                  <meshStandardMaterial 
+                    color={index === currentWaypoint && followingPath ? "#FF9800" : "#2196F3"} 
+                    transparent
+                    opacity={0.7}
+                  />
+                </mesh>
+                <Text
+                  position={[wp.x, 0.3, wp.y]}
+                  fontSize={0.2}
+                  color="#000000"
+                  anchorX="center"
+                  anchorY="middle"
+                >
+                  {index + 1}
+                </Text>
+                
+                {/* Path line */}
+                {index < programmedPath.length - 1 && (
+                  <PathLine 
+                    start={[wp.x, 0.05, wp.y]} 
+                    end={[programmedPath[index + 1].x, 0.05, programmedPath[index + 1].y]} 
+                    color="#2196F3"
+                  />
+                )}
+              </React.Fragment>
+            ))}
+          </group>
+        )}
+        
+        {/* Target position visualization */}
+        {targetPosition && (
+          <group>
+            <mesh position={[targetPosition.x, 0.05, targetPosition.y]}>
+              <ringGeometry args={[0.15, 0.2, 32]} />
+              <meshStandardMaterial color="#F44336" />
+            </mesh>
+            {/* Direction indicator */}
+            <mesh 
+              position={[
+                targetPosition.x + 0.3 * Math.cos(targetPosition.theta),
+                0.05,
+                targetPosition.y + 0.3 * Math.sin(targetPosition.theta)
+              ]}
+              rotation={[0, targetPosition.theta + Math.PI / 2, 0]}
+            >
+              <coneGeometry args={[0.08, 0.2, 32]} />
+              <meshStandardMaterial color="#F44336" />
+            </mesh>
+          </group>
+        )}
+        
+        <OrbitControls target={[position[0], 0, position[2]]} />
+      </Canvas>
+      
+      {/* UI Overlays */}
+      <ControlPanel 
+        leftVoltage={leftVoltage}
+        rightVoltage={rightVoltage}
+        setLeftVoltage={setLeftVoltage}
+        setRightVoltage={setRightVoltage}
+        axleOffset={axleOffset}
+        setAxleOffset={setAxleOffset}
+        programPath={() => setPathDialogOpen(true)}
+        goToPosition={() => setPositionDialogOpen(true)}
+      />
+      
+      <MetricsDisplay 
+        position={position}
+        rotation={rotation}
+        leftSpeed={leftWheelSpeed}
+        rightSpeed={rightWheelSpeed}
+      />
+      
+      {/* Dialogs */}
+      <PathProgramDialog 
+        isOpen={pathDialogOpen}
+        onClose={() => setPathDialogOpen(false)}
+        onSave={(path) => {
+          setProgrammedPath(path);
+          setCurrentWaypoint(0);
+          setFollowingPath(true);
+        }}
+      />
+      
+      <PositionDialog 
+        isOpen={positionDialogOpen}
+        onClose={() => setPositionDialogOpen(false)}
+        onGo={(x, y, theta) => {
+          setTargetPosition({x, y, theta});
+        }}
+      />
+      
+      <MathematicalModel 
+        isOpen={mathModelOpen}
+        onClose={() => setMathModelOpen(false)}
+      />
+    </div>
+  );
+};
+
+// PathProgramDialog component
 const PathProgramDialog: React.FC<{
   isOpen: boolean;
   onClose: () => void;
@@ -496,344 +906,6 @@ const MathematicalModel: React.FC<{
           </button>
         </div>
       </div>
-    </div>
-  );
-};
-
-// PathLine component to fix the line rendering
-const PathLine: React.FC<{
-  start: [number, number, number];
-  end: [number, number, number];
-  color?: string;
-}> = ({ start, end, color = "#2196F3" }) => {
-  return (
-    <primitive object={new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(...start),
-        new THREE.Vector3(...end)
-      ]),
-      new THREE.LineBasicMaterial({ color })
-    )} />
-  );
-};
-
-// Main simulation component
-const VehicleSimulation: React.FC = () => {
-  // Motor voltages
-  const [leftVoltage, setLeftVoltage] = useState(0);
-  const [rightVoltage, setRightVoltage] = useState(0);
-  
-  // Vehicle state
-  const [position, setPosition] = useState<[number, number, number]>([0, 0, 0]);
-  const [rotation, setRotation] = useState<[number, number, number]>([0, 0, 0]);
-  
-  // Axle configuration
-  const [axleOffset, setAxleOffset] = useState(0);
-  
-  // Path programming state
-  const [pathDialogOpen, setPathDialogOpen] = useState(false);
-  const [programmedPath, setProgrammedPath] = useState<{x: number, y: number, theta: number}[]>([]);
-  const [followingPath, setFollowingPath] = useState(false);
-  const [currentWaypoint, setCurrentWaypoint] = useState(0);
-  
-  // Position control state
-  const [positionDialogOpen, setPositionDialogOpen] = useState(false);
-  const [targetPosition, setTargetPosition] = useState<{x: number, y: number, theta: number} | null>(null);
-  
-  // Mathematical model dialog
-  const [mathModelOpen, setMathModelOpen] = useState(false);
-  
-  // Calculate wheel speeds from voltages
-  const leftWheelSpeed = (leftVoltage / motorData.maxVoltage) * motorData.maxRPM * (Math.PI / 30); // rad/s
-  const rightWheelSpeed = (rightVoltage / motorData.maxVoltage) * motorData.maxRPM * (Math.PI / 30); // rad/s
-  
-  // Update vehicle position and rotation based on physics model
-  React.useEffect(() => {
-    if (followingPath || targetPosition) {
-      // Don't apply manual controls when in autonomous mode
-      return;
-    }
-    
-    const interval = setInterval(() => {
-      // Calculate linear and angular velocities from wheel speeds
-      const linearVelocity = ((leftWheelSpeed + rightWheelSpeed) / 2) * WHEEL_RADIUS;
-      const angularVelocity = ((rightWheelSpeed - leftWheelSpeed) * WHEEL_RADIUS) / VEHICLE_WIDTH;
-      
-      // Update vehicle position and rotation
-      setPosition(prev => [
-        prev[0] + linearVelocity * Math.cos(rotation[1]) * 0.016,
-        prev[1],
-        prev[2] + linearVelocity * Math.sin(rotation[1]) * 0.016
-      ]);
-      
-      setRotation(prev => [
-        prev[0],
-        prev[1] + angularVelocity * 0.016,
-        prev[2]
-      ]);
-    }, 16);
-    
-    return () => clearInterval(interval);
-  }, [leftWheelSpeed, rightWheelSpeed, rotation, followingPath, targetPosition]);
-  
-  // Path following logic
-  React.useEffect(() => {
-    if (!followingPath || programmedPath.length === 0) return;
-    
-    const interval = setInterval(() => {
-      const waypoint = programmedPath[currentWaypoint];
-      const dx = waypoint.x - position[0];
-      const dy = waypoint.y - position[2];
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      
-      // Target heading is the angle to the waypoint
-      const targetHeading = Math.atan2(dy, dx);
-      
-      // Heading error (normalized to [-PI, PI])
-      let headingError = targetHeading - rotation[1];
-      while (headingError > Math.PI) headingError -= 2 * Math.PI;
-      while (headingError < -Math.PI) headingError += 2 * Math.PI;
-      
-      // Simple proportional control
-      const turnRate = Math.min(Math.max(headingError * 2, -1), 1); // limited turn rate
-      const speed = Math.min(distance * 0.5, 0.5); // limit speed
-      
-      // Convert to wheel speeds
-      const leftMotorInput = (speed - turnRate * VEHICLE_WIDTH / 2) / WHEEL_RADIUS;
-      const rightMotorInput = (speed + turnRate * VEHICLE_WIDTH / 2) / WHEEL_RADIUS;
-      
-      // Update position and rotation
-      setPosition(prev => [
-        prev[0] + speed * Math.cos(rotation[1]) * 0.016,
-        prev[1],
-        prev[2] + speed * Math.sin(rotation[1]) * 0.016
-      ]);
-      
-      setRotation(prev => [
-        prev[0],
-        prev[1] + turnRate * 0.016,
-        prev[2]
-      ]);
-      
-      // Check if reached waypoint
-      if (distance < 0.1) {
-        // If final waypoint, stop path following
-        if (currentWaypoint === programmedPath.length - 1) {
-          setFollowingPath(false);
-          setCurrentWaypoint(0);
-          return;
-        }
-        // Otherwise, move to next waypoint
-        setCurrentWaypoint(prev => prev + 1);
-      }
-    }, 16);
-    
-    return () => clearInterval(interval);
-  }, [followingPath, programmedPath, currentWaypoint, position, rotation]);
-  
-  // Position control logic
-  React.useEffect(() => {
-    if (!targetPosition) return;
-    
-    const interval = setInterval(() => {
-      const dx = targetPosition.x - position[0];
-      const dy = targetPosition.y - position[2];
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      
-      // Heading to target
-      const pathHeading = Math.atan2(dy, dx);
-      
-      // Are we close enough to start prioritizing final heading?
-      const closeToTarget = distance < 0.3;
-      
-      // Target heading - path heading when far, final heading when close
-      const targetHeading = closeToTarget ? targetPosition.theta : pathHeading;
-      
-      // Heading error (normalized to [-PI, PI])
-      let headingError = targetHeading - rotation[1];
-      while (headingError > Math.PI) headingError -= 2 * Math.PI;
-      while (headingError < -Math.PI) headingError += 2 * Math.PI;
-      
-      // Position control
-      const turnRate = Math.min(Math.max(headingError * 2, -1), 1);
-      const speed = closeToTarget ? Math.min(distance * 1.0, 0.1) : Math.min(distance * 0.5, 0.5);
-      
-      // Stop if we've reached the target
-      if (distance < 0.05 && Math.abs(headingError) < 0.05) {
-        setTargetPosition(null);
-        return;
-      }
-      
-      // Update position and rotation
-      setPosition(prev => [
-        prev[0] + speed * Math.cos(rotation[1]) * 0.016,
-        prev[1],
-        prev[2] + speed * Math.sin(rotation[1]) * 0.016
-      ]);
-      
-      setRotation(prev => [
-        prev[0],
-        prev[1] + turnRate * 0.016,
-        prev[2]
-      ]);
-    }, 16);
-    
-    return () => clearInterval(interval);
-  }, [targetPosition, position, rotation]);
-  
-  return (
-    <div className="relative w-full h-screen">
-      <div className="absolute top-4 left-4 z-10">
-        <h1 className="text-2xl font-bold text-white bg-blue-500 px-4 py-2 rounded-lg shadow">
-          Tesla Cord Rider Simulation
-        </h1>
-      </div>
-      
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex space-x-2">
-        <button 
-          onClick={() => setMathModelOpen(true)}
-          className="bg-white text-blue-800 px-4 py-2 rounded-md shadow hover:bg-blue-100 transition"
-        >
-          View Mathematical Model
-        </button>
-        {followingPath && (
-          <button 
-            onClick={() => setFollowingPath(false)}
-            className="bg-red-500 text-white px-4 py-2 rounded-md shadow hover:bg-red-600 transition"
-          >
-            Stop Path Following
-          </button>
-        )}
-        {targetPosition && (
-          <button 
-            onClick={() => setTargetPosition(null)}
-            className="bg-red-500 text-white px-4 py-2 rounded-md shadow hover:bg-red-600 transition"
-          >
-            Cancel Go To Position
-          </button>
-        )}
-      </div>
-      
-      {/* 3D Simulation Canvas */}
-      <Canvas camera={{ position: [0, 5, 5], fov: 50 }}>
-        <color attach="background" args={["#f0f0f0"]} />
-        <ambientLight intensity={0.5} />
-        <directionalLight position={[10, 10, 5]} intensity={1} />
-        
-        {/* Vehicle */}
-        <Vehicle 
-          leftVoltage={leftVoltage} 
-          rightVoltage={rightVoltage} 
-          axleOffset={axleOffset}
-          position={position}
-          rotation={rotation}
-        />
-        
-        {/* Environment */}
-        <Floor />
-        
-        {/* Path visualization */}
-        {programmedPath.length > 0 && (
-          <group>
-            {programmedPath.map((wp, index) => (
-              <React.Fragment key={index}>
-                <mesh position={[wp.x, 0.05, wp.y]}>
-                  <sphereGeometry args={[0.1, 16, 16]} />
-                  <meshStandardMaterial 
-                    color={index === currentWaypoint && followingPath ? "#FF9800" : "#2196F3"} 
-                    transparent
-                    opacity={0.7}
-                  />
-                </mesh>
-                <Text
-                  position={[wp.x, 0.3, wp.y]}
-                  fontSize={0.2}
-                  color="#000000"
-                  anchorX="center"
-                  anchorY="middle"
-                >
-                  {index + 1}
-                </Text>
-                
-                {/* Path line */}
-                {index < programmedPath.length - 1 && (
-                  <PathLine 
-                    start={[wp.x, 0.05, wp.y]} 
-                    end={[programmedPath[index + 1].x, 0.05, programmedPath[index + 1].y]} 
-                    color="#2196F3"
-                  />
-                )}
-              </React.Fragment>
-            ))}
-          </group>
-        )}
-        
-        {/* Target position visualization */}
-        {targetPosition && (
-          <group>
-            <mesh position={[targetPosition.x, 0.05, targetPosition.y]}>
-              <ringGeometry args={[0.15, 0.2, 32]} />
-              <meshStandardMaterial color="#F44336" />
-            </mesh>
-            {/* Direction indicator */}
-            <mesh 
-              position={[
-                targetPosition.x + 0.3 * Math.cos(targetPosition.theta),
-                0.05,
-                targetPosition.y + 0.3 * Math.sin(targetPosition.theta)
-              ]}
-            >
-              <coneGeometry args={[0.08, 0.2, 32]} />
-              <meshStandardMaterial color="#F44336" />
-            </mesh>
-          </group>
-        )}
-        
-        <OrbitControls target={[position[0], 0, position[2]]} />
-      </Canvas>
-      
-      {/* UI Overlays */}
-      <ControlPanel 
-        leftVoltage={leftVoltage}
-        rightVoltage={rightVoltage}
-        setLeftVoltage={setLeftVoltage}
-        setRightVoltage={setRightVoltage}
-        axleOffset={axleOffset}
-        setAxleOffset={setAxleOffset}
-        programPath={() => setPathDialogOpen(true)}
-        goToPosition={() => setPositionDialogOpen(true)}
-      />
-      
-      <MetricsDisplay 
-        position={position}
-        rotation={rotation}
-        leftSpeed={leftWheelSpeed}
-        rightSpeed={rightWheelSpeed}
-      />
-      
-      {/* Dialogs */}
-      <PathProgramDialog 
-        isOpen={pathDialogOpen}
-        onClose={() => setPathDialogOpen(false)}
-        onSave={(path) => {
-          setProgrammedPath(path);
-          setCurrentWaypoint(0);
-          setFollowingPath(true);
-        }}
-      />
-      
-      <PositionDialog 
-        isOpen={positionDialogOpen}
-        onClose={() => setPositionDialogOpen(false)}
-        onGo={(x, y, theta) => {
-          setTargetPosition({x, y, theta});
-        }}
-      />
-      
-      <MathematicalModel 
-        isOpen={mathModelOpen}
-        onClose={() => setMathModelOpen(false)}
-      />
     </div>
   );
 };
